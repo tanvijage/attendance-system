@@ -1,0 +1,194 @@
+import time
+
+import numpy as np
+import face_recognition as fr
+import cv2
+import datetime
+import pymysql as sql
+import pyttsx3
+from datetime import date
+import calendar
+engine = pyttsx3.init('sapi5')
+voices = engine.getProperty('voices')
+print(voices[0].id)
+engine.setProperty('voices', voices[0].id)
+
+def speak(audio):
+    engine.say(audio)
+    engine.runAndWait()
+
+def wishme():
+    time = int(datetime.datetime.now().hour)
+    if time >= 0 and time < 12:
+        speak("good morning!")
+    elif time >= 12 and time < 18:
+        speak("good afternoon!")
+    else:
+        speak("good evening")
+    speak("Hi!! How may I help you ??")
+
+def week_of_month(date):
+
+    cal_object = calendar.Calendar(6)
+    month_calendar_dates = cal_object.itermonthdates(date.year,date.month)
+
+    day_of_week = 1
+    week_number = 1
+
+    for day in month_calendar_dates:
+        #add a week and reset day of week
+        if day_of_week > 7:
+            week_number += 1
+            day_of_week = 1
+
+        if date == day:
+            break
+        else:
+            day_of_week += 1
+
+    return week_number
+
+
+#***main***
+wishme()
+
+now = datetime.datetime.now()
+timenow = now.strftime("%H:%M")
+curr_date = date.today()
+x =calendar.day_name[curr_date.weekday()]
+a = week_of_month(date.today())
+table_name = "attendance"+str(a)
+while True:
+    print("\t\n** Menu: **\n")
+    print("1. Mark your attendance. \n")
+    speak("Mark your attendance.")
+    print("2. Show today's attendance. \n")
+    speak("Show today's attendance.\n")
+    print("3. Check a person's weekly attendance .\n")
+    speak("Check a person's weekly attendance.\n")
+    print("4. Show the list of people who are absent.\n")
+    speak("Show the list of people who are absent.")
+    print("5. Exit. \n")
+    speak("exit")
+    try:
+        speak("enter your choice")
+        select = int(input("Enter your choice : "))
+        if select == 1:
+            y = "P at " + timenow
+            mydb = sql.connect(host='localhost', user='root', password='', database='attendence')
+            mycursor = mydb.cursor()
+
+            try:
+                n = input("enter your name ")
+                r = input("enter your roll no. ")
+                video = cv2.VideoCapture(0)
+
+                image = fr.load_image_file("C:/Users/HP/Pictures/Camera Roll/"+n+".jpeg")   #imagefile
+                image_encodings = fr.face_encodings(image)[0]   #writesimage data to a strem
+
+                known_face_encodings = [image_encodings]  #array of known face encoding
+                known_face_name = [n] #array of names
+
+                while True:              #to capture frame repeatitively
+                    ret, frame = video.read()
+                    rgb_frame = frame[:, :, ::-1]  #convet color of the frame to rgb frame
+
+                    face_locations = fr.face_locations(rgb_frame)   #to find the face locations
+                    face_encodings = fr.face_encodings(rgb_frame, face_locations)    #to dectect which faces are there in the image
+
+                    for (top, right, bottom, left), face_encodings in zip(face_locations, face_encodings):    #zip to combain two or more iterables
+                        matches = fr.compare_faces(known_face_encodings, face_encodings)
+
+                        name = "unkown"
+
+                        face_distances = fr.face_distance(known_face_encodings, image_encodings)    #compairs the distance between 2 points of the face
+                        best_match_index = np.argmin(face_distances)              #best match is the image with simlar face distances
+                        if matches[best_match_index]:
+                            name = known_face_encodings[best_match_index]
+
+                            q = "UPDATE `"+ table_name +"` SET " + x + " ='" + y + "'" + " WHERE name = '" + n + "' " + "and rollno = " + r + ";"
+                            mycursor.execute(q)
+                            mydb.commit()
+                            print(mycursor.rowcount, "updated successfully")
+                            speak("updated successfully")
+                            video.release()
+                            cv2.destroyAllWindows()
+                        else:
+                            print("Sorry match not found")
+                            speak("Sorry match not found")
+                    cv2.imshow('webcame_facerecog', frame)
+
+                    if cv2.waitKey(1) and 0xff == ord('q'):
+                        break
+                    break
+
+            except Exception:    #if program couldn't not connect the web cam, or if name or roll no. is incorrect then exception block will run
+                print("  ")
+                n = input("enter your name ")
+                r = input("enter your roll no. ")
+                y = "P at " + timenow
+                mydb = sql.connect(host='localhost', user='root', password='', database='attendence')
+                mycursor = mydb.cursor()
+                q = "UPDATE `"+ table_name +"` SET " + x + " ='" + y + "'" + " WHERE name = '" + n + "' " + "and rollno = " + r + ";"
+                mycursor.execute(q)
+                mydb.commit()
+                print(mycursor.rowcount, "updated succsesfully")
+                speak("updated succsesfully")
+            time.sleep(10)
+            continue
+
+        elif select == 2:
+            mydb = sql.connect(host='localhost', user='root', password='', database='attendence')
+            mycursor = mydb.cursor()
+            mycursor.execute("SELECT COUNT('A') 'no. of absent people' FROM "+table_name+" WHERE " + x + " != 'A';")
+            speak("people who are present today are")
+            print("People who are present today are")
+            print(mycursor.fetchall())
+            q = "SELECT `rollno`, `name` FROM `"+table_name+"` WHERE " + x + "!='A';"
+            mycursor.execute(q)
+            print(mycursor.fetchall())
+            for i in mycursor:
+                print('\n' + i + "\n")
+            time.sleep(10)
+            continue
+
+        elif select == 3:
+            n = input("enter the name ")
+            speak(n + "'s weekly attendance is ")
+            mydb = sql.connect(host='localhost', user='root', password='', database='attendence')
+            mycursor = mydb.cursor()
+            mycursor.execute("SELECT * FROM "+table_name+" WHERE name = '" + n +"';")
+            print(mycursor.fetchall())
+            time.sleep(10)
+            continue
+
+        elif select == 4:
+            mydb = sql.connect(host='localhost', user='root', password='', database='attendence')
+            mycursor = mydb.cursor()
+            mycursor.execute("SELECT COUNT('A') 'no. of absent people' FROM "+table_name+" WHERE " + x + "='A';")
+            speak("People who are absent today are")
+            print("People who are absent today are")
+            print(mycursor.fetchall())
+            q = "SELECT `rollno`, `name` FROM `"+table_name+"` WHERE " + x + "='A';"
+            mycursor.execute(q)
+            print(mycursor.fetchall())
+            for i in mycursor:
+                print('\n' + i + "\n")
+
+            time.sleep(10)
+            continue
+
+        elif select == 5:
+            print("bye, see you soon (^^)")
+            speak("bye see you soon")
+            break
+
+        else:
+            print("please enter the correct choice")
+            speak("please enter the correct choice")
+            continue
+
+    except (ValueError):
+        print("Oops!  That was no valid number.  Try again...")
+        speak("Oops!  That was no valid number.  Try again...")
+
